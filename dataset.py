@@ -1,46 +1,82 @@
 import os
-import cv2
+import pandas as pd
+import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 from PIL import Image
-import torch
+import cv2
 
-class CustomDataset(Dataset):
-    def __init__(self, root_dir, mode='train', transform=None, target_size=(150, 150)):
+
+def resize_image(image, target_size):
+    resized_image = cv2.resize(image, target_size)
+    return resized_image
+
+
+def resize_point(original_point, image, target_size):
+    # Get the original image size
+    original_image_size = (image.shape[1], image.shape[0])
+
+    # Calculate scale factors for both dimensions
+    scale_factor_x = target_size[1] / original_image_size[1]
+    scale_factor_y = target_size[0] / original_image_size[0]
+
+    # Scale the coordinates of the point
+    x, y = original_point
+    scaled_x = int(x * scale_factor_x)
+    scaled_y = int(y * scale_factor_y)
+
+    return scaled_x, scaled_y
+
+
+def draw_keypoints(image, nose):
+    for point in nose:
+        x, y = point
+        cv2.circle(image, (x, y), 2, (0, 0, 255), 2)  # Draw a red circle around the keypoints
+        # cv2.circle(image, center_coordinates, radius, color, thickness)
+    return image
+
+
+class PetDataset(Dataset):
+    def __init__(self, txt, root_dir, transform=None, target_size=(640, 640)):
+        self.labels = pd.read_csv(txt)  # makes sense
         self.root_dir = root_dir
-        self.mode = mode
         self.transform = transform
         self.target_size = target_size
-        self.image_folder = os.path.join(root_dir, mode)
-        self.label_file = os.path.join(root_dir, mode, 'labels.txt').replace('\\', '/')
-
-        self.labels = self._read_labels()
 
     def __len__(self):
-        return len(self.labels)
+        return len(self.labels)  # makes sense
 
     def __getitem__(self, idx):
-        img_name = os.path.normpath(os.path.join(self.image_folder, self.labels[idx][0]))
-        image = cv2.imread(img_name)
+        # check for indexing operations (can delete if causing issues)
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
 
-        label = float(self.labels[idx][1])  # Convert 'Car' to 1.0, 'NoCar' to 0.0
+        # Get item from folder
+        image_name_parts = self.labels.iloc[idx, 0].split('_')
+        breed_name = "_".join(image_name_parts[:-1])  # Join all parts except the last one
+        img_name = os.path.join(self.root_dir, f'{breed_name}_{image_name_parts[-1]}')
 
-        image = cv2.resize(image, self.target_size)
+        # Read image
+        image = cv2.imread(img_name)  # this works
 
-        image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+        # Resize the image
+        image = resize_image(image, self.target_size)
+
+        # Convert nose coordinates to a tensor
+        nose_str = self.labels.iloc[idx, 1][1:-1]
+        original_nose = list(map(int, nose_str.split(',')))
+        nose = resize_point(original_nose, image, self.target_size)
+        nose = torch.tensor(nose, dtype=torch.float32)
+        sample = {'image': image, 'nose': nose}
 
         if self.transform:
+            image = Image.fromarray(image)
             image = self.transform(image)
 
-        label = int(self.labels[idx][1])
+        return sample
 
-        return image, label
 
-    def _read_labels(self):
-        labels = []
-        with open(self.label_file, 'r') as f:
-            lines = f.readlines()
-            for line in lines:
-                parts = line.split()
-                labels.append((parts[0], int(parts[1]), parts[2]))
-        return labels
+    def visualize_keypoints(self, image, nose):
+        # Draw keypoints on the image
+        img_with_keypoints = draw_keypoints(self, nose)
+        return img_with_keypoints
