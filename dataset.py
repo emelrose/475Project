@@ -11,6 +11,24 @@ def resize_image(image, target_size):
     resized_image = cv2.resize(image, target_size)
     return resized_image
 
+def create_dataloader(batch_size, mode):
+
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+    ])
+
+    if mode == "Train":
+        dataset = PetDataset(txt='./data/train_noses.3.txt', root_dir='./data/images/', transform=transform,
+                               target_size=(640, 640))
+        shuffle = True
+
+    else:
+        dataset = PetDataset(txt='./data/test_noses.txt', root_dir='./data/images/', transform=transform,
+                              target_size=(640, 640))
+        shuffle = False
+
+    return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+
 
 def resize_point(original_point, image, target_size):
     # Get the original image size
@@ -73,7 +91,7 @@ class PetDataset(Dataset):
             image = Image.fromarray(image)
             image = self.transform(image)
 
-        return sample
+        return image, nose
 
 
     def visualize_keypoints(self, image, nose):
