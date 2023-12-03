@@ -63,14 +63,16 @@ def train(batch_size, num_epochs, model, device, learning_rate, lr_scaling_facto
         epoch_loss = 0
         epoch_distances = []
         #loss = euclidian_distance()
-        for batch_images, batch_labels in data_loader:
+        for batch in data_loader:
+            images, noses = batch
+            print(images)
+            print(noses)
             batch_distances = []
             optimizer.zero_grad()
-            batch_images = batch_images.to(device=device)
-            batch_labels = batch_labels.to(device=device)
+            batch_images = images.to(device=device)
+            batch_labels = images.to(device=device)
             outputs = model(batch_images)
 
-            print(outputs.data[0,0])
 
 
 
