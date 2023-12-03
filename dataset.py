@@ -85,7 +85,6 @@ class PetDataset(Dataset):
         original_nose = list(map(int, nose_str.split(',')))
         nose = resize_point(original_nose, image, self.target_size)
         nose = torch.tensor(nose, dtype=torch.float32)
-        sample = {'image': image, 'nose': nose}
 
         if self.transform:
             image = Image.fromarray(image)
