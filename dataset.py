@@ -1,3 +1,4 @@
+import fnmatch
 import os
 import pandas as pd
 import torch
@@ -8,29 +9,38 @@ import cv2
 
 
 def resize_image(image, target_size):
+    if image is None or len(image) == 0:
+        print(f"Error: Image is empty or not loaded")  # CAUSING ISSUES
+        return None
+
     resized_image = cv2.resize(image, target_size)
+
+    if resized_image is None or len(resized_image) == 0:
+        print(f"Error: resized image is empty")
+        return None
+
     return resized_image
 
-def create_dataloader(batch_size, mode):
 
+def create_dataloader(batch_size, mode):
     transform = transforms.Compose([
         transforms.ToTensor(),
     ])
 
     if mode == "Train":
         dataset = PetDataset(txt='./data/train_noses.3.txt', root_dir='./data/images/', transform=transform,
-                               target_size=(640, 640))
+                             target_size=(640, 640))
         shuffle = True
 
     else:
         dataset = PetDataset(txt='./data/test_noses.txt', root_dir='./data/images/', transform=transform,
-                              target_size=(640, 640))
+                             target_size=(640, 640))
         shuffle = False
 
     return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
 
 
-def resize_point(original_point, image, target_size):
+def scale_point(original_point, image, target_size):
     # Get the original image size
     original_image_size = (image.shape[1], image.shape[0])
 
@@ -56,34 +66,45 @@ def draw_keypoints(image, nose):
 
 class PetDataset(Dataset):
     def __init__(self, txt, root_dir, transform=None, target_size=(640, 640)):
-        self.labels = pd.read_csv(txt)  # makes sense
+        self.labels = pd.read_csv(txt)
         self.root_dir = root_dir
         self.transform = transform
         self.target_size = target_size
+        self.img_files = []
+
+        for file in os.listdir(self.root_dir):
+            try:
+                if fnmatch.fnmatch(file, '*.jpg'):
+                    img_path = os.path.join(self.root_dir, file)
+                    cv2.imread(img_path)  # Try reading the image to check for corruption
+                    self.img_files.append(file)
+            except (IOError, cv2.error) as e:
+                print(f"File is corrupted/unreadable {file}. Skipped this one. Error: {e}")
 
     def __len__(self):
-        return len(self.labels)  # makes sense
+        return len(self.labels)
 
     def __getitem__(self, idx):
-        # check for indexing operations (can delete if causing issues)
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        # Get item from folder
         image_name_parts = self.labels.iloc[idx, 0].split('_')
-        breed_name = "_".join(image_name_parts[:-1])  # Join all parts except the last one
+        breed_name = "_".join(image_name_parts[:-1])
         img_name = os.path.join(self.root_dir, f'{breed_name}_{image_name_parts[-1]}')
 
-        # Read image
-        image = cv2.imread(img_name)  # this works
+        # Read the image
+        image = cv2.imread(img_name)
 
         # Resize the image
         image = resize_image(image, self.target_size)
 
-        # Convert nose coordinates to a tensor
+        if img_name not in self.img_files:
+            print(f"Skipping corrupted file: {img_name}")
+            return None
+
         nose_str = self.labels.iloc[idx, 1][1:-1]
         original_nose = list(map(int, nose_str.split(',')))
-        nose = resize_point(original_nose, image, self.target_size)
+        nose = scale_point(original_nose, image, self.target_size)
         nose = torch.tensor(nose, dtype=torch.float32)
 
         if self.transform:
@@ -92,8 +113,6 @@ class PetDataset(Dataset):
 
         return image, nose
 
-
     def visualize_keypoints(self, image, nose):
-        # Draw keypoints on the image
         img_with_keypoints = draw_keypoints(self, nose)
         return img_with_keypoints
