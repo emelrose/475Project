@@ -4,10 +4,10 @@ import dataset
 import os
 import argparse
 import torch
+import torch.nn as nn
 from model import VetNet
 
 
-# determines the center point of the bounding box returned by yolo
 def get_output_center(x_min, y_min, x_max, y_max):
     # find the length and width of the returned bounding box
     x_length = x_max - x_min
@@ -20,27 +20,16 @@ def get_output_center(x_min, y_min, x_max, y_max):
     return x_center, y_center
 
 
-# calculate euclidian distance of 2 points
-# def euclidian_distance(model_outputs, label_outputs):
-#     x1, x2 = model_outputs[0,0], label_outputs[0]
-#     y1, y2 = model_outputs[0,1], label_outputs[1]
-#     x_component = (x2-x1)**2
-#     y_component = (y2-y1)**2
-#     distance = math.sqrt(x_component + y_component)
-#     return distance
-
-def euclidian_distance(model_outputs, true_labels):  # Also calculates euclidean distance
-    # Assuming model_outputs and true labels are tensors of shape (batch_size, 2)
-    return torch.norm(model_outputs - true_labels, dim=1)
-
-
 def distance_statistics(distances):
-    minimum_distance = min(distances)
-    maximum_distance = max(distances)
-    mean_distance = statistics.mean(distances)
-    standard_deviation = statistics.stdev(distances, mean_distance)
+    l_dist = []
+    for d in distances:
+        l_dist.append(d.item())
+        minimum_distance = min(l_dist)
+        maximum_distance = max(l_dist)
+        mean_distance = statistics.mean(l_dist)
+        standard_deviation = statistics.stdev(l_dist, mean_distance)
 
-    return minimum_distance, maximum_distance, mean_distance, standard_deviation
+        return minimum_distance, maximum_distance, mean_distance, standard_deviation
 
 
 # function to build optimizer and lr_scheduler
@@ -64,30 +53,40 @@ def train(batch_size, num_epochs, model, device, learning_rate, lr_scaling_facto
         lr_scaling_factor,
         scheduler_patience
     )
-
-    # t_distances = []
+    min, max, mean, std = 0, 0, 0, 0
+    t_distances = []
     for epoch_number in range(num_epochs):
         epoch_distances = []
-
-        for batch in data_loader:
-            images, noses = batch
+        b_num = 0
+        for image_batched, label_batched in data_loader:
+            b_num += 1
+            d_length = len(data_loader)
+            batch_loss = []
+            if b_num % 10 == 0:
+                print(f"batcH: {b_num} of {d_length}")
+            if image_batched is None:
+                print(f"bad batche {b_num}")
+                continue
             optimizer.zero_grad()
-            batch_images = images.to(device=device)
-            batch_labels = noses.to(device=device)
+            batch_images = image_batched.to(device=device)
+            batch_labels = label_batched.to(device=device)
             outputs = model(batch_images)
-
+            loss = torch.sqrt((outputs - batch_labels) ** 2).sum()
+            loss.backward()
+            optimizer.step()
             # Calculate Euclidean_distance
-            distance = euclidian_distance(outputs, batch_labels)
-            epoch_distances.extend(distance.tolist())  # per batch, convert to list
-
-        torch.cuda.empty_cache()  # Clear GPU memory
-
+            # distance = euclidian_distance(outputs, batch_labels)
+            epoch_distances.append(loss.item())  # per batch, convert to list
+            torch.cuda.empty_cache()  # Clear GPU memory
         # Convert list to tensor, per epoch
-        epoch_distances = torch.tensor(epoch_distances)
-        print(f"Epoch {epoch_number + 1}, Mean Distance: {epoch_distances.mean().item()}")
 
+        for d in epoch_distances:
+            t_distances.append(d)
+        print(t_distances)
+        min, max, mean, std = distance_statistics(t_distances)
+        print(f"Total Stats: {min}, {max}, {mean}, {std}")
+        print(f"Epoch {epoch_number + 1}, Mean Distance: {epoch_distances.mean()}")
         print("Epoch training Complete")
-        print(f"")
 
 
 def evaluate(batch_size, model, device):
@@ -106,8 +105,8 @@ def evaluate(batch_size, model, device):
             outputs = model(batch_images)
 
             # Calculate Euclidean_distance
-            distance = euclidian_distance(outputs, batch_labels)
-            distances.extend(distance.tolist())  # per batch, convert to list
+            # distance = euclidian_distance(outputs, batch_labels)
+            # distances.extend(distance.tolist())  # per batch, convert to list
 
     # Convert list to tensor, per epoch
     distances_tensor = torch.tensor(distances, device=device)
