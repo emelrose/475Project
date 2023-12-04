@@ -1,0 +1,1 @@
+!python train.py -gamma 0.005 -e 1 -b 20 -l encoder.pth -s decoder.pth -mode train
