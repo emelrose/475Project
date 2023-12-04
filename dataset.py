@@ -9,16 +9,7 @@ import cv2
 
 
 def resize_image(image, target_size):
-    if image is None or len(image) == 0:
-        print(f"Error: Image is empty or not loaded")  # CAUSING ISSUES
-        return None
-
     resized_image = cv2.resize(image, target_size)
-
-    if resized_image is None or len(resized_image) == 0:
-        print(f"Error: resized image is empty")
-        return None
-
     return resized_image
 
 
@@ -77,9 +68,10 @@ class PetDataset(Dataset):
                 if fnmatch.fnmatch(file, '*.jpg'):
                     img_path = os.path.join(self.root_dir, file)
                     cv2.imread(img_path)  # Try reading the image to check for corruption
-                    self.img_files.append(file)
             except (IOError, cv2.error) as e:
                 print(f"File is corrupted/unreadable {file}. Skipped this one. Error: {e}")
+                continue
+            self.img_files.append(file)
 
     def __len__(self):
         return len(self.labels)
@@ -91,16 +83,18 @@ class PetDataset(Dataset):
         image_name_parts = self.labels.iloc[idx, 0].split('_')
         breed_name = "_".join(image_name_parts[:-1])
         img_name = os.path.join(self.root_dir, f'{breed_name}_{image_name_parts[-1]}')
-
         # Read the image
         image = cv2.imread(img_name)
+
+        #image = cv2.imread(img_name)
+
 
         # Resize the image
         image = resize_image(image, self.target_size)
 
-        if img_name not in self.img_files:
-            print(f"Skipping corrupted file: {img_name}")
-            return None
+        #if img_name not in self.img_files:
+        #    print(f"Skipping corrupted file: {img_name}")
+        #    os.remove(img_name)
 
         nose_str = self.labels.iloc[idx, 1][1:-1]
         original_nose = list(map(int, nose_str.split(',')))
